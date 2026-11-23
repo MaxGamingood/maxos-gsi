@@ -52,6 +52,12 @@ jobs:
                   drop.append(name)
               elif path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid')):
                   drop.append(name)
+              elif path.startswith(('test/cts', 'test/vts', 'test/sts', 'test/suite_harness', 'test/mts')):
+                  drop.append(name)
+              elif path.startswith(('prebuilts/gcc', 'prebuilts/abi-dumps', 'prebuilts/ndk', 'prebuilts/devguide')):
+                  drop.append(name)
+              elif path.startswith(('hardware/qcom', 'hardware/ril', 'developers/', 'pdk')):
+                  drop.append(name)
           with open('/home/runner/maxos-slim.xml', 'w') as f:
               f.write('<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n')
               for name in sorted(set(drop)):
