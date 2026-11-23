@@ -57,6 +57,11 @@ jobs:
           all_projects = projects_of('https://raw.githubusercontent.com/crdroidandroid/android/16.0/default.xml')
           all_projects += projects_of('https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/manifest.xml')
 
+          # respect TrebleDroid's remove.xml: those projects must NOT be synced
+          rem_xml = urllib.request.urlopen('https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/remove.xml').read().decode()
+          removed_names = set(re.findall(r'<remove-project\s+name="([^"]+)"', rem_xml))
+          all_projects = [(p, n) for (p, n) in all_projects if n not in removed_names]
+
           def slim_keep(path):
               if path.startswith(('device/', 'kernel/')) and not path.startswith(('device/phh', 'device/generic')):
                   return False
