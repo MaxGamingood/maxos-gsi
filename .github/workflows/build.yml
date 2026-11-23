@@ -49,28 +49,23 @@ jobs:
           cd ~/android
           ~/bin/repo init -u https://github.com/crdroidandroid/android.git -b $BASE_BRANCH --depth=1 --git-lfs
           git clone https://github.com/TrebleDroid/treble_manifest .repo/local_manifests -b $TREBLE_MANIFEST_BRANCH --depth=1
+          # MaxOS fix: rename treble manifest's github remote to avoid collision with crDroid's
+          sed -i 's/<remote name="github" fetch="https:\/\/github.com\/" \/>/<remote name="maxosgh" fetch="https:\/\/github.com\/" \/>/; s/remote="github"/remote="maxosgh"/g' .repo/local_manifests/manifest.xml
           ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags --force-sync
           df -h /
 
       - name: Generate treble device + apply MaxOS layer
         run: |
           cd ~/android
-          git clone https://github.com/TrebleDroid/treble_experimentations ~/treble --depth=1
-          (cd device/phh/theatre 2>/dev/null || true)
-          bash device/phh/treble/generate.sh crdroid || bash ~/treble/build-dakkar.sh --help >/dev/null 2>&1 || true
-          # MaxOS device layer
+          # MaxOS device layer (props, keylayout, bootanimation) as a first-class makefile
           mkdir -p device/maxos
           cp -r $GITHUB_WORKSPACE/maxos/* device/maxos/
-          # props into system
-          mkdir -p device/maxos/overlay/system/etc
-          cp device/maxos/maxos.prop device/maxos/overlay/system/etc/maxos.prop
-          # keylayout
-          mkdir -p device/maxos/overlay/system/usr/keylayout
-          cp device/maxos/keylayout/Vendor_0001_Product_0001.kl device/maxos/overlay/system/usr/keylayout/
-          # boot animation
-          cp device/maxos/bootanimation.zip device/maxos/overlay/system/media/bootanimation.zip || \
-            cp $GITHUB_WORKSPACE/branding/bootanimation.zip device/maxos/overlay/system/media/bootanimation.zip
-          echo "MaxOS layer staged"
+          # known treble build fix
+          rm -f device/*/sepolicy/common/private/genfs_contexts || true
+          # lineage rom script (crDroid is a Lineage fork) + MaxOS layer injected as second makefile
+          bash device/phh/treble/generate.sh device/phh/treble/lineage.mk device/maxos/maxos.mk
+          grep -c "inherit-product" AndroidProducts.mk device/phh/treble/AndroidProducts.mk 2>/dev/null || true
+          ls device/phh/treble/treble_arm64_bvN.mk && echo "target generated OK"
 
       - name: Build system image
         run: |
