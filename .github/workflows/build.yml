@@ -52,7 +52,9 @@ jobs:
           # MaxOS fix: rename treble manifest's github remote to avoid collision with crDroid's
           sed -i 's/<remote name="github" fetch="https:\/\/github.com\/" \/>/<remote name="maxosgh" fetch="https:\/\/github.com\/" \/>/; s/remote="github"/remote="maxosgh"/g' .repo/local_manifests/manifest.xml
           # MaxOS fix: crDroid already dropped some AOSP projects - make all removals optional
-          sed -i 's/<remove-project /<remove-project optional="true" /' .repo/local_manifests/remove.xml .repo/local_manifests/replace.xml
+          sed -i 's/<remove-project /<remove-project optional="true" /' .repo/local_manifests/remove.xml
+          # MaxOS fix: drop replace.xml entirely - it re-pins AOSP projects that collide with crDroid's own
+          rm -f .repo/local_manifests/replace.xml
           ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags --force-sync
           df -h /
 
