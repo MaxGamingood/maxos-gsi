@@ -1,0 +1,94 @@
+name: Build MaxOS GSI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ 'maxos/**', '.github/workflows/build.yml' ]
+
+env:
+  BASE_BRANCH: "16.2"          # crDroid android 16 QPR2
+  TREBLE_MANIFEST_BRANCH: "android-16.0"
+  LUNCH_TARGET: "treble_arm64_bvN-userdebug"   # A/B vanilla for v1; Google apps via Play
+  MAXOS_VERSION: "1.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout MaxOS repo
+        uses: actions/checkout@v4
+
+      - name: Free disk space (aggressive)
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /etc/mysql /etc/php /usr/lib/jvm 2>/dev/null || true
+          sudo docker image prune -af 2>/dev/null || true
+          sudo apt-get clean
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libssl-dev libxml2 \
+            libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip \
+            zlib1g-dev git-lfs python3 xz-utils
+          mkdir -p ~/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          git config --global user.name "maxos-builder"
+          git config --global user.email "builder@maxos.local"
+          git lfs install
+
+      - name: Sync crDroid + TrebleDroid (shallow)
+        run: |
+          mkdir -p ~/android
+          cd ~/android
+          ~/bin/repo init -u https://github.com/crdroidandroid/android.git -b $BASE_BRANCH --depth=1 --git-lfs
+          git clone https://github.com/TrebleDroid/treble_manifest .repo/local_manifests -b $TREBLE_MANIFEST_BRANCH --depth=1
+          ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags --force-sync
+          df -h /
+
+      - name: Generate treble device + apply MaxOS layer
+        run: |
+          cd ~/android
+          git clone https://github.com/TrebleDroid/treble_experimentations ~/treble --depth=1
+          (cd device/phh/theatre 2>/dev/null || true)
+          bash device/phh/treble/generate.sh crdroid || bash ~/treble/build-dakkar.sh --help >/dev/null 2>&1 || true
+          # MaxOS device layer
+          mkdir -p device/maxos
+          cp -r $GITHUB_WORKSPACE/maxos/* device/maxos/
+          # props into system
+          mkdir -p device/maxos/overlay/system/etc
+          cp device/maxos/maxos.prop device/maxos/overlay/system/etc/maxos.prop
+          # keylayout
+          mkdir -p device/maxos/overlay/system/usr/keylayout
+          cp device/maxos/keylayout/Vendor_0001_Product_0001.kl device/maxos/overlay/system/usr/keylayout/
+          # boot animation
+          cp device/maxos/bootanimation.zip device/maxos/overlay/system/media/bootanimation.zip || \
+            cp $GITHUB_WORKSPACE/branding/bootanimation.zip device/maxos/overlay/system/media/bootanimation.zip
+          echo "MaxOS layer staged"
+
+      - name: Build system image
+        run: |
+          cd ~/android
+          source build/envsetup.sh
+          lunch $LUNCH_TARGET
+          make WITHOUT_CHECK_API=true -j$(nproc) systemimage
+          df -h /
+
+      - name: Compress + upload artifact
+        run: |
+          cd ~/android
+          IMG=$(find out/target/product -name system.img | head -1)
+          xz -c "$IMG" -T0 > maxos-1.0-arm64-ab.img.xz
+          ls -lh maxos-1.0-arm64-ab.img.xz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maxos-1.0-arm64-ab
+          path: ~/android/maxos-1.0-arm64-ab.img.xz
+          compression-level: 0
