@@ -1,0 +1,6 @@
+# MaxOS device defaults for LG V60 (timelm) - applied at build time
+persist.sys.overlay.devinputjack=true
+persist.sys.phh.caf.audio_policy=1
+persist.sys.phh.include_all_cameras=true
+camera.aux.packagelist=nothing
+vendor.camera.aux.packagelist=nothing
