@@ -1,0 +1,11 @@
+# crave.yaml - goes to .repo/manifests/crave.yaml after the first repo init
+#
+# IMPORTANT: the top-level key must EXACTLY match the project name shown by
+# `crave clone list` on your account (also visible in the foss.crave.io
+# dashboard). Adjust the key below once you see the real list.
+#
+# ignoreClientHostname keeps the workspace (synced tree + out/) persistent
+# across sessions - which is how we honor the "no clean builds" rule.
+
+MaxOS:
+  ignoreClientHostname: true
