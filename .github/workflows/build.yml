@@ -13,8 +13,12 @@ env:
 
 jobs:
   sync:
-    name: "Part 1: slim sync"
+    name: "sync ${{ matrix.chunk }}"
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [core, frameworks, external, packages, system-vendor, prebuilts, misc]
     steps:
       - name: Free disk space
         run: |
@@ -22,7 +26,6 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost /etc/mysql /etc/php /usr/lib/jvm 2>/dev/null || true
           sudo docker image prune -af 2>/dev/null || true
           sudo apt-get clean
-          df -h
 
       - name: Install tools
         run: |
@@ -35,38 +38,74 @@ jobs:
           git config --global user.email "builder@maxos.local"
           git lfs install
 
-      - name: Generate slim manifest (drop OEM device/kernel/vendor trees)
+      - name: Compute this chunk's project list
         run: |
           python3 << 'EOF'
           import urllib.request, re
-          xml = urllib.request.urlopen('https://raw.githubusercontent.com/crdroidandroid/android/16.0/default.xml').read().decode()
-          tags = re.findall(r'<project\b[^>]*/>', xml)
-          drop = []
-          for tag in tags:
-              pm = re.search(r'path="([^"]+)"', tag)
-              nm = re.search(r'name="([^"]+)"', tag)
-              if not pm or not nm:
-                  continue
-              path, name = pm.group(1), nm.group(1)
+
+          def projects_of(url):
+              xml = urllib.request.urlopen(url).read().decode()
+              out = []
+              for tag in re.findall(r'<project\b[^>]*/>', xml):
+                  pm = re.search(r'path="([^"]+)"', tag)
+                  nm = re.search(r'name="([^"]+)"', tag)
+                  if pm and nm:
+                      out.append((pm.group(1), nm.group(1)))
+              return out
+
+          # crDroid base + TrebleDroid additions
+          all_projects = projects_of('https://raw.githubusercontent.com/crdroidandroid/android/16.0/default.xml')
+          all_projects += projects_of('https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/manifest.xml')
+
+          def slim_keep(path):
               if path.startswith(('device/', 'kernel/')) and not path.startswith(('device/phh', 'device/generic')):
-                  drop.append(name)
-              elif path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid')):
-                  drop.append(name)
-              elif path.startswith(('test/cts', 'test/vts', 'test/sts', 'test/suite_harness', 'test/mts')):
-                  drop.append(name)
-              elif path.startswith(('prebuilts/gcc', 'prebuilts/abi-dumps', 'prebuilts/ndk', 'prebuilts/devguide')):
-                  drop.append(name)
-              elif path.startswith(('hardware/qcom', 'hardware/ril', 'developers/', 'pdk')):
-                  drop.append(name)
-          with open('/home/runner/maxos-slim.xml', 'w') as f:
-              f.write('<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n')
-              for name in sorted(set(drop)):
-                  f.write(f'  <remove-project name="{name}" optional="true" />\n')
-              f.write('</manifest>\n')
-          print(f'MaxOS slim manifest: {len(set(drop))} projects dropped')
+                  return False
+              if path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid')):
+                  return False
+              if path.startswith(('test/cts', 'test/vts', 'test/sts', 'test/suite_harness', 'test/mts')):
+                  return False
+              if path.startswith(('prebuilts/gcc', 'prebuilts/abi-dumps', 'prebuilts/ndk', 'prebuilts/devguide')):
+                  return False
+              if path.startswith(('hardware/qcom', 'hardware/ril', 'developers/', 'pdk')):
+                  return False
+              return True
+
+          chunks = {
+              'core':         ('art', 'bionic', 'bootable', 'build', 'dalvik', 'development',
+                               'libcore', 'libnativehelper', 'device', 'tools', 'test'),
+              'frameworks':   ('frameworks',),
+              'external':     ('external',),
+              'packages':     ('packages',),
+              'system-vendor': ('system', 'hardware', 'vendor'),
+              'prebuilts':    ('prebuilts',),
+          }
+
+          chunk = '${{ matrix.chunk }}'
+          if chunk == 'misc':
+              assigned = set()
+              for prefixes in chunks.values():
+                  assigned.update(prefixes)
+              paths = [p for (p, n) in all_projects
+                       if slim_keep(p) and not p.startswith(tuple(assigned))]
+          else:
+              prefixes = chunks[chunk]
+              paths = [p for (p, n) in all_projects
+                       if slim_keep(p) and p.startswith(prefixes)]
+
+          # dedupe (crDroid + td manifest may overlap)
+          seen, uniq = set(), []
+          for p in paths:
+              if p not in seen:
+                  seen.add(p); uniq.append(p)
+
+          with open('/home/runner/paths.txt', 'w') as f:
+              f.write('\n'.join(uniq))
+          print(f'chunk {chunk}: {len(uniq)} projects')
+          for p in uniq[:10]:
+              print('  ', p)
           EOF
 
-      - name: Sync slim tree
+      - name: Sync chunk
         run: |
           mkdir -p ~/android
           cd ~/android
@@ -75,21 +114,21 @@ jobs:
           sed -i 's/<remote name="github" fetch="https:\/\/github.com\/" \/>/<remote name="maxosgh" fetch="https:\/\/github.com\/" \/>/; s/remote="github"/remote="maxosgh"/g' .repo/local_manifests/manifest.xml
           sed -i 's/<remove-project /<remove-project optional="true" /' .repo/local_manifests/remove.xml
           rm -f .repo/local_manifests/replace.xml
-          cp /home/runner/maxos-slim.xml .repo/local_manifests/maxos-slim.xml
-          ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags --fail-fast
+          # sync ONLY this chunk's paths
+          ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags --fail-fast $(cat /home/runner/paths.txt | tr '\n' ' ')
           df -h
 
-      - name: Pack tree (zstd)
+      - name: Pack chunk (zstd, no .repo)
         run: |
           cd ~
-          tar -c -I 'zstd -T0 -3' --exclude='android/.repo' -f android-tree.tar.zst android
-          ls -lh android-tree.tar.zst
+          tar -c -I 'zstd -T0 -3' --exclude='android/.repo' -f chunk-${{ matrix.chunk }}.tar.zst android
+          ls -lh chunk-${{ matrix.chunk }}.tar.zst
 
-      - name: Upload tree artifact
+      - name: Upload chunk
         uses: actions/upload-artifact@v4
         with:
-          name: android-tree
-          path: /home/runner/android-tree.tar.zst
+          name: chunk-${{ matrix.chunk }}
+          path: /home/runner/chunk-${{ matrix.chunk }}.tar.zst
           retention-days: 3
           compression-level: 0
 
@@ -106,7 +145,6 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost /etc/mysql /etc/php /usr/lib/jvm 2>/dev/null || true
           sudo docker image prune -af 2>/dev/null || true
           sudo apt-get clean
-          df -h
 
       - name: Install build dependencies
         run: |
@@ -120,22 +158,29 @@ jobs:
           git config --global user.email "builder@maxos.local"
           git lfs install
 
-      - name: Download tree
+      - name: Download all chunks
         uses: actions/download-artifact@v4
         with:
-          name: android-tree
-          path: /home/runner
+          path: /home/runner/chunks
 
-      - name: Extract tree
+      - name: Assemble tree
         run: |
-          cd ~
-          tar -x -I 'zstd -T0' -f android-tree.tar.zst
-          rm -f android-tree.tar.zst
+          mkdir -p ~/android
+          for c in core frameworks external packages system-vendor prebuilts misc; do
+            if [ -f "/home/runner/chunks/chunk-$c/chunk-$c.tar.zst" ]; then
+              echo "extracting chunk-$c"
+              tar -x -I 'zstd -T0' -f "/home/runner/chunks/chunk-$c/chunk-$c.tar.zst" -C ~/android
+            else
+              echo "chunk-$c missing!"
+              exit 1
+            fi
+          done
+          du -sh ~/android
           df -h
 
       - name: Apply MaxOS layer + generate targets
         run: |
-          cd /mnt/android
+          cd ~/android
           mkdir -p device/maxos
           cp -r $GITHUB_WORKSPACE/maxos/* device/maxos/
           rm -f device/*/sepolicy/common/private/genfs_contexts || true
@@ -144,8 +189,7 @@ jobs:
 
       - name: Build system image
         run: |
-          cd /mnt/android
-          export OUT_DIR=$HOME/out
+          cd ~/android
           source build/envsetup.sh
           lunch $LUNCH_TARGET
           make WITHOUT_CHECK_API=true -j$(nproc) systemimage
@@ -153,7 +197,7 @@ jobs:
 
       - name: Package image
         run: |
-          IMG=$(find $HOME/out/target/product -name system.img | head -1)
+          IMG=$(find ~/android/out/target/product -name system.img | head -1)
           xz -c "$IMG" -T0 > /home/runner/maxos-1.0-arm64-ab.img.xz
           ls -lh /home/runner/maxos-1.0-arm64-ab.img.xz
 
