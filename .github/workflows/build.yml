@@ -62,8 +62,8 @@ jobs:
 
       - name: Sync slim tree
         run: |
-          mkdir -p /mnt/android
-          cd /mnt/android
+          mkdir -p ~/android
+          cd ~/android
           ~/bin/repo init -u https://github.com/crdroidandroid/android.git -b $BASE_BRANCH --depth=1 --git-lfs
           git clone https://github.com/TrebleDroid/treble_manifest .repo/local_manifests -b $TREBLE_MANIFEST_BRANCH --depth=1
           sed -i 's/<remote name="github" fetch="https:\/\/github.com\/" \/>/<remote name="maxosgh" fetch="https:\/\/github.com\/" \/>/; s/remote="github"/remote="maxosgh"/g' .repo/local_manifests/manifest.xml
@@ -75,15 +75,15 @@ jobs:
 
       - name: Pack tree (zstd)
         run: |
-          cd /mnt
-          tar -c -I 'zstd -T0 -3' -f android-tree.tar.zst android
+          cd ~
+          tar -c -I 'zstd -T0 -3' --exclude='android/.repo' -f android-tree.tar.zst android
           ls -lh android-tree.tar.zst
 
       - name: Upload tree artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-tree
-          path: /mnt/android-tree.tar.zst
+          path: /home/runner/android-tree.tar.zst
           retention-days: 3
           compression-level: 0
 
@@ -118,11 +118,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: android-tree
-          path: /mnt
+          path: /home/runner
 
       - name: Extract tree
         run: |
-          cd /mnt
+          cd ~
           tar -x -I 'zstd -T0' -f android-tree.tar.zst
           rm -f android-tree.tar.zst
           df -h
@@ -148,12 +148,12 @@ jobs:
       - name: Package image
         run: |
           IMG=$(find $HOME/out/target/product -name system.img | head -1)
-          xz -c "$IMG" -T0 > /mnt/maxos-1.0-arm64-ab.img.xz
-          ls -lh /mnt/maxos-1.0-arm64-ab.img.xz
+          xz -c "$IMG" -T0 > /home/runner/maxos-1.0-arm64-ab.img.xz
+          ls -lh /home/runner/maxos-1.0-arm64-ab.img.xz
 
       - name: Upload MaxOS image
         uses: actions/upload-artifact@v4
         with:
           name: maxos-1.0-arm64-ab
-          path: /mnt/maxos-1.0-arm64-ab.img.xz
+          path: /home/runner/maxos-1.0-arm64-ab.img.xz
           compression-level: 0
