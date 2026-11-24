@@ -204,20 +204,31 @@ jobs:
 
       - name: Find latest chunk artifacts (cross-run)
         id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ART=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=100" | \
-            python3 -c "
-          import json, sys
-          d = json.load(sys.stdin)
-          arts = [a for a in d.get('artifacts', []) if a['name'].startswith('chunk-') and not a['expired']]
-          arts.sort(key=lambda a: a['created_at'], reverse=True)
+          python3 << 'PYEOF'
+          import json, os, urllib.request
+
+          repo = os.environ.get('GITHUB_REPOSITORY', 'MaxGamingood/maxos-gsi')
+          req = urllib.request.Request(
+              f'https://api.github.com/repos/{repo}/actions/artifacts?per_page=100',
+              headers={'Authorization': 'Bearer ' + os.environ.get('GH_TOKEN', ''),
+                       'User-Agent': 'maxos-builder',
+                       'Accept': 'application/vnd.github+json'})
+          d = json.load(urllib.request.urlopen(req))
+          arts = [a for a in d.get('artifacts', [])
+                  if str(a.get('name', '')).startswith('chunk-')
+                  and not a.get('expired', False) and a.get('run_id')]
           runs = sorted(set(a['run_id'] for a in arts), reverse=True)
-          print(runs[0] if runs else '')
-          ")
-          if [ -z "$ART" ]; then echo "no chunk artifacts found anywhere"; exit 1; fi
-          echo "using artifacts from run $ART"
-          echo "run_id=$ART" >> "$GITHUB_OUTPUT"
+          print('artifact runs found:', runs[:3])
+          with open('/home/runner/src_run.txt', 'w') as f:
+              f.write(str(runs[0]) if runs else '')
+          PYEOF
+          SRC=$(cat /home/runner/src_run.txt)
+          if [ -z "$SRC" ]; then echo "no chunk artifacts found anywhere"; exit 1; fi
+          echo "using artifacts from run $SRC"
+          echo "run_id=$SRC" >> "$GITHUB_OUTPUT"
 
       - name: Download all chunks
         uses: actions/download-artifact@v4
