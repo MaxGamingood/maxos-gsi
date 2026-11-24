@@ -86,7 +86,11 @@ jobs:
           all_projects = [(p, n) for (p, n) in all_projects if n not in removed_names]
 
           def slim_keep(path):
-              if path.startswith(('device/', 'kernel/')) and not path.startswith(('device/phh', 'device/generic')):
+              if path.startswith('device/') and not path.startswith('device/phh'):
+                  return False
+              if path.startswith('kernel/'):
+                  return False
+              if path in ('cts', 'platform_testing') or path.startswith(('test/', 'pdk', 'developers/')):
                   return False
               if path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid')):
                   return False
@@ -208,6 +212,7 @@ jobs:
               exit 1
             fi
           done
+          rm -rf /home/runner/chunks
           ls ~/android/device/phh/treble/generate.sh && echo "[MaxOS] tree assembled correctly"
           du -sh ~/android
           df -h
