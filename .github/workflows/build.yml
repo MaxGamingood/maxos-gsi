@@ -231,7 +231,22 @@ jobs:
           test -f frameworks/base/Android.bp && echo "[MaxOS] frameworks/base OK" \
             || { echo "[MaxOS] FAIL: frameworks/base missing"; exit 1; }
           source build/envsetup.sh
-          lunch $LUNCH_TARGET
+          # A15+ lunch requires product-RELEASE-variant: auto-detect the release config
+          REL=""
+          if [ -d build/release/release_configs ]; then
+            echo "[MaxOS] available release configs:"
+            ls build/release/release_configs/
+            REL=$(ls build/release/release_configs/ | sed -E 's/\.[a-zA-Z]+$//' | grep -E '^[a-z]{2}[0-9]+a' | sort | tail -1)
+          fi
+          echo "[MaxOS] using release config: ${REL:-<legacy format>}"
+          # fresh runner every build: ccache brings zero benefit, only disk hunger
+          export CCACHE_DISABLE=1
+          ccache -M 2G >/dev/null 2>&1 || true
+          if [ -n "$REL" ]; then
+            lunch ${LUNCH_TARGET%-*}-$REL-${LUNCH_TARGET##*-}
+          else
+            lunch $LUNCH_TARGET
+          fi
           make WITHOUT_CHECK_API=true -j$(nproc) systemimage
           df -h
 
