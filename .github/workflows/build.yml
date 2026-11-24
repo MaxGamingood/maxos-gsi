@@ -92,7 +92,7 @@ jobs:
                   return False
               if path in ('cts', 'platform_testing') or path.startswith(('test/', 'pdk', 'developers/')):
                   return False
-              if path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid')):
+              if path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid', 'vendor/hardware_overlay')):
                   return False
               if path.startswith(('test/cts', 'test/vts', 'test/sts', 'test/suite_harness', 'test/mts')):
                   return False
