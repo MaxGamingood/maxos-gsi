@@ -190,8 +190,10 @@ jobs:
           mkdir -p device/maxos
           cp -r $GITHUB_WORKSPACE/maxos/* device/maxos/
           rm -f device/*/sepolicy/common/private/genfs_contexts || true
-          bash device/phh/treble/generate.sh device/phh/treble/lineage.mk device/maxos/maxos.mk
-          ls device/phh/treble/treble_arm64_bvN.mk && echo "[MaxOS] target generated"
+          # generate.sh must run FROM device/phh/treble (writes targets to CWD)
+          cd device/phh/treble
+          bash generate.sh device/phh/treble/lineage.mk device/maxos/maxos.mk
+          ls treble_arm64_bvN.mk && echo "[MaxOS] target generated"
 
       - name: Build system image
         run: |
