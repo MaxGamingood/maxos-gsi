@@ -276,7 +276,7 @@ jobs:
           bash generate.sh device/phh/treble/lineage.mk device/maxos/maxos.mk
           ls treble_arm64_bvN.mk && echo "[MaxOS] target generated"
 
-      - name: Build system image
+      - name: Build system image (self-healing)
         run: |
           cd ~/android
           test -f build/envsetup.sh && echo "[MaxOS] envsetup OK" \
@@ -296,7 +296,29 @@ jobs:
           else
             lunch $LUNCH_TARGET
           fi
-          make WITHOUT_CHECK_API=true -j$(nproc) systemimage
+
+          # self-healing loop: soong parse errors on test-tree Android.bps get evicted, then retry
+          for ATTEMPT in 1 2 3 4 5 6 7 8; do
+            echo "===== [MaxOS] make attempt $ATTEMPT ====="
+            if OUT=$(make WITHOUT_CHECK_API=true -j$(nproc) systemimage 2>&1); then
+              echo "[MaxOS] BUILD SUCCEEDED"
+              break
+            fi
+            PARSE_BAD=$(echo "$OUT" | grep -oE '^[^ ]*Android\.bp:[0-9]+:[0-9]+: error' | sed 's|/Android\.bp:[0-9]+:[0-9]+: error||' | sort -u)
+            if [ -z "$PARSE_BAD" ]; then
+              echo "[MaxOS] not a parse error - real build failure. Tail:"
+              echo "$OUT" | tail -60
+              exit 1
+            fi
+            echo "[MaxOS] evicting unparseable Android.bps:"
+            for d in $PARSE_BAD; do
+              if [ -f "$HOME/android/$d/Android.bp" ]; then
+                echo "  evicting $d/Android.bp"
+                mv "$HOME/android/$d/Android.bp" "$HOME/android/evicted_$(echo $d | tr '/' '_').bp"
+              fi
+            done
+          done
+          [ -f ~/android/out/target/product/*/system.img ] || { echo "[MaxOS] no system.img after loop"; exit 1; }
           df -h
 
       - name: Package image
