@@ -11,9 +11,17 @@ on:
         description: 'Extra projects to sync into the assembled tree before build (space-separated paths)'
         default: 'kernel/configs'
         type: string
+      source_run:
+        description: 'Run ID containing chunk artifacts (empty = use same-run artifacts)'
+        default: ''
+        type: string
   push:
     branches: [ main ]
     paths: [ 'maxos/**', '.github/workflows/build.yml' ]
+
+permissions:
+  actions: read
+  contents: read
 
 env:
   BASE_BRANCH: "16.0"
@@ -202,40 +210,19 @@ jobs:
           git config --global user.email "builder@maxos.local"
           git lfs install
 
-      - name: Find latest chunk artifacts (cross-run)
-        id: find
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 << 'PYEOF'
-          import json, os, urllib.request
-
-          repo = os.environ.get('GITHUB_REPOSITORY', 'MaxGamingood/maxos-gsi')
-          req = urllib.request.Request(
-              f'https://api.github.com/repos/{repo}/actions/artifacts?per_page=100',
-              headers={'Authorization': 'Bearer ' + os.environ.get('GH_TOKEN', ''),
-                       'User-Agent': 'maxos-builder',
-                       'Accept': 'application/vnd.github+json'})
-          d = json.load(urllib.request.urlopen(req))
-          arts = [a for a in d.get('artifacts', [])
-                  if str(a.get('name', '')).startswith('chunk-')
-                  and not a.get('expired', False) and a.get('run_id')]
-          runs = sorted(set(a['run_id'] for a in arts), reverse=True)
-          print('artifact runs found:', runs[:3])
-          with open('/home/runner/src_run.txt', 'w') as f:
-              f.write(str(runs[0]) if runs else '')
-          PYEOF
-          SRC=$(cat /home/runner/src_run.txt)
-          if [ -z "$SRC" ]; then echo "no chunk artifacts found anywhere"; exit 1; fi
-          echo "using artifacts from run $SRC"
-          echo "run_id=$SRC" >> "$GITHUB_OUTPUT"
-
-      - name: Download all chunks
+      - name: Download all chunks (from source run)
+        if: ${{ github.event.inputs.source_run != '' }}
         uses: actions/download-artifact@v4
         with:
           path: /home/runner/chunks
-          run-id: ${{ steps.find.outputs.run_id }}
+          run-id: ${{ github.event.inputs.source_run }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all chunks (same run)
+        if: ${{ github.event.inputs.source_run == '' || github.event_name == 'push' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: /home/runner/chunks
 
       - name: Assemble tree
         run: |
