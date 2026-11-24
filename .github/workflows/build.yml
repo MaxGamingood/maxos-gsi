@@ -239,14 +239,12 @@ jobs:
           done
           rm -rf /home/runner/chunks
           ls ~/android/device/phh/treble/generate.sh && echo "[MaxOS] tree assembled correctly"
-          # evict duplicate soong module definers (keep hardware/lineage/compat's copy)
-          mkdir -p /home/runner/evicted
-          for f in $(grep -rl "prebuilt_libprotobuf-cpp-full-vendorcompat" ~/android --include="Android.bp" || true); do
-            case "$f" in
-              */hardware/lineage/compat/*) echo "keeping: $f" ;;
-              *) echo "evicting duplicate definer: $f"; mv "$f" /home/runner/evicted/ ;;
-            esac
-          done
+          # test-only / lineage-hw Android.bps that clash with our slim tree - remove by exact path
+          rm -f  ~/android/art/test/Android.bp
+          rm -f  ~/android/frameworks/base/libs/WindowManager/Shell/tests/flicker/pip/Android.bp
+          rm -rf ~/android/hardware/lineage
+          # diagnostics: who else defines vendorcompat protobufs?
+          grep -rl "vendorcompat" ~/android --include="*.bp" | head -5 || true
           du -sh ~/android
           df -h
 
