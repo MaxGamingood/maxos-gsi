@@ -18,3 +18,10 @@ PRODUCT_COPY_FILES += \
 # MaxOS boot animation
 PRODUCT_COPY_FILES += \
     device/maxos/bootanimation.zip:$(TARGET_COPY_OUT_SYSTEM)/media/bootanimation.zip
+
+# Exclude test trees whose infrastructure we intentionally do not sync
+# (same mechanism crDroid uses for -kernel/platform / -prebuilts/misc/protobuf_vendorcompat)
+PRODUCT_SOURCE_ROOT_DIRS += \
+    -tools/loganalysis \
+    -packages/modules/Nfc/tests \
+    -packages/modules/Connectivity/networksecurity/tests
