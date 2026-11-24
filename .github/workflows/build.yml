@@ -105,7 +105,8 @@ jobs:
               if path.startswith('kernel/') and not path.startswith('kernel/configs'):
                   return False
               if path in ('cts', 'platform_testing') or path.startswith(('test/', 'pdk', 'developers/')):
-                  return False
+                  if not path.startswith('test/suite_harness'):
+                      return False
               if path.startswith('vendor/') and not path.startswith(('vendor/lineage', 'vendor/support', 'vendor/crdroid', 'vendor/hardware_overlay')):
                   return False
               if path.startswith(('prebuilts/gcc', 'prebuilts/abi-dumps', 'prebuilts/ndk', 'prebuilts/devguide')):
@@ -238,6 +239,14 @@ jobs:
           done
           rm -rf /home/runner/chunks
           ls ~/android/device/phh/treble/generate.sh && echo "[MaxOS] tree assembled correctly"
+          # evict duplicate soong module definers (keep hardware/lineage/compat's copy)
+          mkdir -p /home/runner/evicted
+          for f in $(grep -rl "prebuilt_libprotobuf-cpp-full-vendorcompat" ~/android --include="Android.bp" || true); do
+            case "$f" in
+              */hardware/lineage/compat/*) echo "keeping: $f" ;;
+              *) echo "evicting duplicate definer: $f"; mv "$f" /home/runner/evicted/ ;;
+            esac
+          done
           du -sh ~/android
           df -h
 
