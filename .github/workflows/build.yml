@@ -304,7 +304,7 @@ jobs:
               echo "[MaxOS] BUILD SUCCEEDED"
               break
             fi
-            PARSE_BAD=$(echo "$OUT" | grep -oE '^[^ ]*Android\.bp:[0-9]+:[0-9]+: error' | sed 's|/Android\.bp:[0-9]+:[0-9]+: error||' | sort -u)
+            PARSE_BAD=$(echo "$OUT" | grep -oE 'error: [^ ]*Android\.bp:[0-9]+:[0-9]+:' | sed -E 's/^error: //; s/:[0-9]+:[0-9]+:$//' | sort -u)
             if [ -z "$PARSE_BAD" ]; then
               echo "[MaxOS] not a parse error - real build failure. Tail:"
               echo "$OUT" | tail -60
