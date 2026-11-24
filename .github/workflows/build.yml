@@ -42,23 +42,46 @@ jobs:
         run: |
           python3 << 'EOF'
           import urllib.request, re
+          import xml.etree.ElementTree as ET
 
-          def projects_of(url):
-              xml = urllib.request.urlopen(url).read().decode()
+          CRDROID_BASE = 'https://raw.githubusercontent.com/crdroidandroid/android/16.0/'
+
+          def fetch_text(url):
+              return urllib.request.urlopen(url).read().decode()
+
+          def parse_projects(xml_text):
+              """Proper XML parse: handles multi-line <project> tags with children,
+              ignores comments, collects path+name."""
               out = []
-              for tag in re.findall(r'<project\b[^>]*/>', xml):
-                  pm = re.search(r'path="([^"]+)"', tag)
-                  nm = re.search(r'name="([^"]+)"', tag)
-                  if pm and nm:
-                      out.append((pm.group(1), nm.group(1)))
+              root = ET.fromstring(xml_text)
+              for e in root.iter('project'):
+                  p, n = e.get('path'), e.get('name')
+                  if p and n:
+                      out.append((p, n))
               return out
 
-          # crDroid base + TrebleDroid additions
-          all_projects = projects_of('https://raw.githubusercontent.com/crdroidandroid/android/16.0/default.xml')
-          all_projects += projects_of('https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/manifest.xml')
+          def collect_manifest(url, depth=0, seen=None):
+              """Follow <include> elements recursively."""
+              if seen is None:
+                  seen = set()
+              if url in seen or depth > 6:
+                  return []
+              seen.add(url)
+              text = fetch_text(url)
+              projects = parse_projects(text)
+              root = ET.fromstring(text)
+              for inc in root.iter('include'):
+                  inc_name = inc.get('name')
+                  if inc_name:
+                      projects += collect_manifest(CRDROID_BASE + inc_name, depth + 1, seen)
+              return projects
 
-          # respect TrebleDroid's remove.xml: those projects must NOT be synced
-          rem_xml = urllib.request.urlopen('https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/remove.xml').read().decode()
+          all_projects = collect_manifest(CRDROID_BASE + 'default.xml')
+          all_projects += parse_projects(fetch_text(
+              'https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/manifest.xml'))
+
+          # respect TrebleDroid remove.xml: those projects must NOT be synced
+          rem_xml = fetch_text('https://raw.githubusercontent.com/TrebleDroid/treble_manifest/android-16.0/remove.xml')
           removed_names = set(re.findall(r'<remove-project\s+name="([^"]+)"', rem_xml))
           all_projects = [(p, n) for (p, n) in all_projects if n not in removed_names]
 
@@ -76,13 +99,13 @@ jobs:
               return True
 
           chunks = {
-              'core':         ('art', 'bionic', 'bootable', 'build', 'dalvik', 'development',
-                               'libcore', 'libnativehelper', 'device', 'tools', 'test'),
-              'frameworks':   ('frameworks',),
-              'external':     ('external',),
-              'packages':     ('packages',),
+              'core':          ('art', 'bionic', 'bootable', 'build', 'dalvik', 'development',
+                                'libcore', 'libnativehelper', 'device', 'tools', 'test'),
+              'frameworks':    ('frameworks',),
+              'external':      ('external',),
+              'packages':      ('packages',),
               'system-vendor': ('system', 'hardware', 'vendor'),
-              'prebuilts':    ('prebuilts',),
+              'prebuilts':     ('prebuilts',),
           }
 
           chunk = '${{ matrix.chunk }}'
@@ -97,11 +120,17 @@ jobs:
               paths = [p for (p, n) in all_projects
                        if slim_keep(p) and p.startswith(prefixes)]
 
-          # dedupe (crDroid + td manifest may overlap)
           seen, uniq = set(), []
           for p in paths:
               if p not in seen:
                   seen.add(p); uniq.append(p)
+
+          # hard sanity: critical projects must exist somewhere
+          critical = ['build/make', 'build/soong', 'device/phh/treble', 'vendor/lineage', 'frameworks/base']
+          assigned_all = [p for (p, n) in all_projects if slim_keep(p)]
+          missing = [c for c in critical if c not in assigned_all]
+          if missing:
+              raise SystemExit(f'CRITICAL projects missing from slim list: {missing}')
 
           with open('/home/runner/paths.txt', 'w') as f:
               f.write('\n'.join(uniq))
@@ -119,7 +148,6 @@ jobs:
           sed -i 's/<remote name="github" fetch="https:\/\/github.com\/" \/>/<remote name="maxosgh" fetch="https:\/\/github.com\/" \/>/; s/remote="github"/remote="maxosgh"/g' .repo/local_manifests/manifest.xml
           sed -i 's/<remove-project /<remove-project optional="true" /' .repo/local_manifests/remove.xml
           rm -f .repo/local_manifests/replace.xml
-          # sync ONLY this chunk's paths
           ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags --fail-fast $(cat /home/runner/paths.txt | tr '\n' ' ')
           df -h
 
@@ -190,7 +218,6 @@ jobs:
           mkdir -p device/maxos
           cp -r $GITHUB_WORKSPACE/maxos/* device/maxos/
           rm -f device/*/sepolicy/common/private/genfs_contexts || true
-          # generate.sh must run FROM device/phh/treble (writes targets to CWD)
           cd device/phh/treble
           bash generate.sh device/phh/treble/lineage.mk device/maxos/maxos.mk
           ls treble_arm64_bvN.mk && echo "[MaxOS] target generated"
@@ -198,6 +225,11 @@ jobs:
       - name: Build system image
         run: |
           cd ~/android
+          # preflight: fail fast with a clear message if something critical is missing
+          test -f build/envsetup.sh && echo "[MaxOS] envsetup OK" \
+            || { echo "[MaxOS] FAIL: build/envsetup.sh missing"; exit 1; }
+          test -f frameworks/base/Android.bp && echo "[MaxOS] frameworks/base OK" \
+            || { echo "[MaxOS] FAIL: frameworks/base missing"; exit 1; }
           source build/envsetup.sh
           lunch $LUNCH_TARGET
           make WITHOUT_CHECK_API=true -j$(nproc) systemimage
