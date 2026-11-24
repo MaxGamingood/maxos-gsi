@@ -174,12 +174,13 @@ jobs:
           for c in core frameworks external packages system-vendor prebuilts misc; do
             if [ -f "/home/runner/chunks/chunk-$c/chunk-$c.tar.zst" ]; then
               echo "extracting chunk-$c"
-              tar -x -I 'zstd -T0' -f "/home/runner/chunks/chunk-$c/chunk-$c.tar.zst" -C ~/android
+              tar -x -I 'zstd -T0' -f "/home/runner/chunks/chunk-$c/chunk-$c.tar.zst" -C ~
             else
               echo "chunk-$c missing!"
               exit 1
             fi
           done
+          ls ~/android/device/phh/treble/generate.sh && echo "[MaxOS] tree assembled correctly"
           du -sh ~/android
           df -h
 
