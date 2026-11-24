@@ -23,5 +23,6 @@ PRODUCT_COPY_FILES += \
 # (same mechanism crDroid uses for -kernel/platform / -prebuilts/misc/protobuf_vendorcompat)
 PRODUCT_SOURCE_ROOT_DIRS += \
     -tools/loganalysis \
-    -packages/modules/Nfc/tests \
-    -packages/modules/Connectivity/networksecurity/tests
+    -test/suite_harness/common/util
+# plus the auto-generated list (tests dirs discovered at build time)
+-include device/maxos/exclusions.mk
