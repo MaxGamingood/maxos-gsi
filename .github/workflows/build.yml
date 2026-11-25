@@ -245,6 +245,33 @@ jobs:
           rm -rf ~/android/hardware/lineage
           # diagnostics: who else defines vendorcompat protobufs?
           grep -rl "vendorcompat" ~/android --include="*.bp" | head -5 || true
+          # neutralize fuzzer_bindings_test (panics licensesPropertyGatherer in slim trees)
+          python3 << 'PYEOF'
+          import re
+          p = '/home/runner/android/system/sepolicy/Android.bp'
+          src = open(p, encoding='utf-8').read()
+          orig = src
+          src = re.sub(r'\n\s*"fuzzer_bindings_test",', '', src)
+          m = re.search(r'name:\s*"fuzzer_bindings_test"', src)
+          if m:
+              i = m.start()
+              ob = src.rfind('{', 0, i)
+              ls = src.rfind('\n', 0, ob) + 1
+              depth = 0; k = ob
+              while k < len(src):
+                  c = src[k]
+                  if c == '{': depth += 1
+                  elif c == '}':
+                      depth -= 1
+                      if depth == 0: break
+                  k += 1
+              src = src[:ls] + src[k+1:]
+          if src != orig:
+              open(p, 'w', encoding='utf-8').write(src)
+              print('[MaxOS] neutralized fuzzer_bindings_test in system/sepolicy')
+          else:
+              print('[MaxOS] fuzzer_bindings_test not found (already clean)')
+          PYEOF
           du -sh ~/android
           df -h
 
