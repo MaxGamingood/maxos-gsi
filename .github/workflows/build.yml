@@ -333,9 +333,9 @@ jobs:
           fi
 
           # bulk pre-purge: deep test trees with hundreds of unbuildable bps
-          rm -rf ~/android/art/test
+          rm -rf ~/android/art/test ~/android/external/robolectric
           # self-healing loop: soong parse errors on test-tree Android.bps get evicted, then retry
-          for ATTEMPT in $(seq 1 60); do
+          for ATTEMPT in $(seq 1 300); do
             echo "===== [MaxOS] make attempt $ATTEMPT ====="
             if OUT=$(make WITHOUT_CHECK_API=true -j$(nproc) systemimage 2>&1); then
               echo "[MaxOS] BUILD SUCCEEDED"
