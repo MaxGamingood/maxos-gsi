@@ -238,6 +238,7 @@ jobs:
             fi
           done
           rm -rf /home/runner/chunks
+          rm -rf ~/android/hardware/lineage
           ls ~/android/device/phh/treble/generate.sh && echo "[MaxOS] tree assembled correctly"
           # test-only / lineage-hw Android.bps that clash with our slim tree - remove by exact path
           rm -f  ~/android/art/test/Android.bp
