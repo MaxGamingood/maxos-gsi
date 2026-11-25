@@ -247,29 +247,37 @@ jobs:
           grep -rl "vendorcompat" ~/android --include="*.bp" | head -5 || true
           # neutralize fuzzer_bindings_test (panics licensesPropertyGatherer in slim trees)
           python3 << 'PYEOF'
-          import re
-          p = '/home/runner/android/system/sepolicy/Android.bp'
-          src = open(p, encoding='utf-8').read()
-          orig = src
-          src = re.sub(r'\n\s*"fuzzer_bindings_test",', '', src)
-          m = re.search(r'name:\s*"fuzzer_bindings_test"', src)
-          if m:
-              i = m.start()
-              ob = src.rfind('{', 0, i)
-              ls = src.rfind('\n', 0, ob) + 1
-              depth = 0; k = ob
-              while k < len(src):
-                  c = src[k]
-                  if c == '{': depth += 1
-                  elif c == '}':
-                      depth -= 1
-                      if depth == 0: break
-                  k += 1
-              src = src[:ls] + src[k+1:]
-          if src != orig:
-              open(p, 'w', encoding='utf-8').write(src)
-              print('[MaxOS] neutralized fuzzer_bindings_test in system/sepolicy')
-          else:
+          import re, glob
+
+          def neutralize(path):
+              src = open(path, encoding='utf-8').read()
+              orig = src
+              src = re.sub(r'\n\s*"fuzzer_bindings_test",', '', src)
+              m = re.search(r'name:\s*"fuzzer_bindings_test"', src)
+              if m:
+                  i = m.start()
+                  ob = src.rfind('{', 0, i)
+                  ls = src.rfind('\n', 0, ob) + 1
+                  depth = 0; k = ob
+                  while k < len(src):
+                      c = src[k]
+                      if c == '{': depth += 1
+                      elif c == '}':
+                          depth -= 1
+                          if depth == 0: break
+                      k += 1
+                  src = src[:ls] + src[k+1:]
+              if src != orig:
+                  open(path, 'w', encoding='utf-8').write(src)
+                  return True
+              return False
+
+          hit = False
+          for p in glob.glob('/home/runner/android/system/sepolicy/**/*.bp', recursive=True):
+              if neutralize(p):
+                  print('[MaxOS] neutralized fuzzer_bindings_test in', p)
+                  hit = True
+          if not hit:
               print('[MaxOS] fuzzer_bindings_test not found (already clean)')
           PYEOF
           du -sh ~/android
