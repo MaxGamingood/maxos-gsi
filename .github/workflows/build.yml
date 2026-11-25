@@ -297,8 +297,10 @@ jobs:
             lunch $LUNCH_TARGET
           fi
 
+          # bulk pre-purge: deep test trees with hundreds of unbuildable bps
+          rm -rf ~/android/art/test
           # self-healing loop: soong parse errors on test-tree Android.bps get evicted, then retry
-          for ATTEMPT in 1 2 3 4 5 6 7 8; do
+          for ATTEMPT in $(seq 1 60); do
             echo "===== [MaxOS] make attempt $ATTEMPT ====="
             if OUT=$(make WITHOUT_CHECK_API=true -j$(nproc) systemimage 2>&1); then
               echo "[MaxOS] BUILD SUCCEEDED"
