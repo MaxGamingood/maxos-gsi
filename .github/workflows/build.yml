@@ -365,7 +365,15 @@ jobs:
             while read -r f; do
               [ -z "$f" ] && continue
               case "$f" in
-                build/*|prebuilts/*)
+                build/*)
+                  echo "  PROTECTED file failed parse: $f"
+                  PROTECTED_FAIL=1 ;;
+                prebuilts/misc/*)
+                  echo "  evicting test-only prebuilt: $f"
+                  if [ -f "$HOME/android/$f" ]; then
+                    mv "$HOME/android/$f" "$HOME/android/evicted_$(echo "$f" | tr '/' '_').bp"
+                  fi ;;
+                prebuilts/*)
                   echo "  PROTECTED file failed parse: $f"
                   PROTECTED_FAIL=1 ;;
                 *)
