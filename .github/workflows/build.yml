@@ -287,13 +287,22 @@ jobs:
       - name: Sync extra projects
         if: ${{ github.event.inputs.extra_projects != '' && github.event.inputs.extra_projects != null }}
         run: |
+          # only sync projects that are genuinely missing from the assembled tree
+          MISSING=""
+          for p in ${{ github.event.inputs.extra_projects }}; do
+            if [ ! -e "$HOME/android/$p" ]; then MISSING="$MISSING $p"; fi
+          done
+          if [ -z "${MISSING// /}" ]; then
+            echo "[MaxOS] all extra projects already present - skipping"
+            exit 0
+          fi
+          echo "[MaxOS] syncing missing extra projects:$MISSING"
           cd ~/android
           ~/bin/repo init -u https://github.com/crdroidandroid/android.git -b $BASE_BRANCH --depth=1
           git clone https://github.com/TrebleDroid/treble_manifest .repo/local_manifests -b $TREBLE_MANIFEST_BRANCH --depth=1
-          sed -i 's/<remote name="github" fetch="https:\/\/github.com\/" \/>/<remote name="maxosgh" fetch="https:\/\/github.com\/" \/>/; s/remote="github"/remote="maxosgh"/g' .repo/local_manifests/manifest.xml
           sed -i 's/<remove-project /<remove-project optional="true" /' .repo/local_manifests/remove.xml
           rm -f .repo/local_manifests/replace.xml
-          ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags ${{ github.event.inputs.extra_projects }}
+          ~/bin/repo sync -c -j4 --no-clone-bundle --no-tags $MISSING
 
       - name: Generate test-tree exclusions + apply MaxOS layer
         run: |
